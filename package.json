@@ -1,13 +1,16 @@
 {
   "name": "aternos-afk-bot",
   "version": "1.0.0",
-  "description": "Telegram bot for Aternos 24/7",
+  "description": "Telegram-бот для утримання Minecraft (Aternos) сервера онлайн через mineflayer",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
-    "mineflayer": "^4.23.0",
+    "mineflayer": "^4.20.1",
     "telegraf": "^4.16.3"
   }
 }

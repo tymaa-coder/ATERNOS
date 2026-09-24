@@ -65,13 +65,16 @@ function stopSession(chatId, reason) {
   }
 }
 
-function startAfkBot(chatId, host, port, username) {
+function startAfkBot(chatId, host, port, username, version) {
   if (sessions.has(chatId)) {
     safeSend(chatId, '⚠️ У цьому чаті вже є активна AFK-сесія. Спочатку виконайте /stop_afk.');
     return;
   }
 
-  safeSend(chatId, `🔄 Підключаюсь до ${host}:${port} як "${username}"...`);
+  safeSend(
+    chatId,
+    `🔄 Підключаюсь до ${host}:${port} як "${username}" (версія: ${version || 'авто'})...`
+  );
 
   let mcBot;
   try {
@@ -79,7 +82,7 @@ function startAfkBot(chatId, host, port, username) {
       host,
       port: Number(port),
       username,
-      version: false, // авто-визначення версії сервера
+      version: version || false, // якщо версію не вказали - авто-визначення
       auth: 'offline', // Aternos зазвичай працює в offline/cracked режимі
     });
   } catch (err) {
@@ -155,15 +158,24 @@ bot.start((ctx) => {
       '👋 Привіт! Я тримаю твій Aternos-сервер онлайн.',
       '',
       'Команди:',
-      '/start_afk <IP> <ПОРТ> <НІКНЕЙМ> - підключити бота до сервера',
+      '/start_afk <IP> <ПОРТ> <НІКНЕЙМ> [ВЕРСІЯ] - підключити бота до сервера',
       '/stop_afk - відключити бота',
       '/status - перевірити стан',
       '',
-      'Приклад:',
+      'Версію вказувати не обов\'язково (тоді визначиться автоматично),',
+      'але якщо є помилка на кшталт "array size is abnormally large" -',
+      'вкажи версію явно, як у другому прикладі.',
+      '',
+      'Приклади:',
       '/start_afk myserver.aternos.me 25565 AfkBot',
+      '/start_afk myserver.aternos.me 25565 AfkBot 1.20.1',
     ].join('\n')
   );
 });
+
+// Схема відомих версій Minecraft, щоб відрізнити "нік" від "версії" в аргументах.
+// Якщо останній аргумент виглядає як версія (наприклад 1.20.1), не додаємо його до ніку.
+const VERSION_REGEX = /^\d+\.\d+(\.\d+)?$/;
 
 bot.command('start_afk', (ctx) => {
   const chatId = ctx.chat.id;
@@ -171,9 +183,22 @@ bot.command('start_afk', (ctx) => {
 
   if (parts.length < 3) {
     ctx.reply(
-      '❗ Невірний формат.\nВикористання:\n/start_afk <IP> <ПОРТ> <НІКНЕЙМ>\n\nПриклад:\n/start_afk myserver.aternos.me 25565 AfkBot'
+      [
+        '❗ Невірний формат.',
+        'Використання:',
+        '/start_afk <IP> <ПОРТ> <НІКНЕЙМ> [ВЕРСІЯ]',
+        '',
+        'Приклади:',
+        '/start_afk myserver.aternos.me 25565 AfkBot',
+        '/start_afk myserver.aternos.me 25565 AfkBot 1.20.1',
+      ].join('\n')
     );
     return;
+  }
+
+  let version = null;
+  if (parts.length >= 4 && VERSION_REGEX.test(parts[parts.length - 1])) {
+    version = parts.pop();
   }
 
   const [host, portStr, ...nickParts] = parts;
@@ -185,8 +210,13 @@ bot.command('start_afk', (ctx) => {
     return;
   }
 
+  if (!username) {
+    ctx.reply('❗ Не вказано нікнейм.');
+    return;
+  }
+
   try {
-    startAfkBot(chatId, host, port, username);
+    startAfkBot(chatId, host, port, username, version);
   } catch (err) {
     console.error('[TG] Неочікувана помилка start_afk:', err);
     ctx.reply(`❌ Сталася непередбачена помилка: ${err.message}`);

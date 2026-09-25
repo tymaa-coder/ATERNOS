@@ -1,7 +1,6 @@
 const { Telegraf } = require('telegraf');
 const mineflayer = require('mineflayer');
 
-// Отримуємо токен виключно з безпечних змінних середовища (Railway Variables)
 const BOT_TOKEN = process.env.BOT_TOKEN;
 
 if (!BOT_TOKEN) {

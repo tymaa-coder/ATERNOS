@@ -1,17 +1,17 @@
 const { Telegraf } = require('telegraf');
 const mineflayer = require('mineflayer');
 
-// Токен твого бота (можна змінити на process.env.BOT_TOKEN, якщо винесеш у змінні середовища)
-const BOT_TOKEN = process.env.BOT_TOKEN || 'СЮДИ_ВСТАВ_ТОКЕН_АБО_ЗАЛИШ_ENV';
+// РўРѕРєРµРЅ С‚РІРѕРіРѕ Р±РѕС‚Р° (РјРѕР¶РЅР° Р·РјС–РЅРёС‚Рё РЅР° process.env.BOT_TOKEN, СЏРєС‰Рѕ РІРёРЅРµСЃРµС€ Сѓ Р·РјС–РЅРЅС– СЃРµСЂРµРґРѕРІРёС‰Р°)
+const BOT_TOKEN = process.env.BOT_TOKEN || 'РЎР®Р”Р_Р’РЎРўРђР’_РўРћРљР•Рќ_РђР‘Рћ_Р—РђР›РРЁ_ENV';
 
 const bot = new Telegraf(BOT_TOKEN);
 
 let minecraftBot = null;
-let currentServerConfig = null; // Зберігаємо параметри для автореконекту
+let currentServerConfig = null; // Р—Р±РµСЂС–РіР°С”РјРѕ РїР°СЂР°РјРµС‚СЂРё РґР»СЏ Р°РІС‚РѕСЂРµРєРѕРЅРµРєС‚Сѓ
 let reconnectTimeout = null;
-let isIntentionallyStopped = false; // Прапорець, щоб розуміти, чи це зупинено користувачем
+let isIntentionallyStopped = false; // РџСЂР°РїРѕСЂРµС†СЊ, С‰РѕР± СЂРѕР·СѓРјС–С‚Рё, С‡Рё С†Рµ Р·СѓРїРёРЅРµРЅРѕ РєРѕСЂРёСЃС‚СѓРІР°С‡РµРј
 
-// Функція для створення/перезапуску mineflayer бота
+// Р¤СѓРЅРєС†С–СЏ РґР»СЏ СЃС‚РІРѕСЂРµРЅРЅСЏ/РїРµСЂРµР·Р°РїСѓСЃРєСѓ mineflayer Р±РѕС‚Р°
 function createMinecraftBot(host, port, username, ctx = null) {
     if (minecraftBot) {
         try {
@@ -24,26 +24,26 @@ function createMinecraftBot(host, port, username, ctx = null) {
     currentServerConfig = { host, port, username };
 
     if (ctx) {
-        ctx.reply(`?? Запускаю AFK-бота на сервері ${host}:${port} як ${username}...`).catch(() => {});
+        ctx.reply(`рџ”„ Р—Р°РїСѓСЃРєР°СЋ AFK-Р±РѕС‚Р° РЅР° СЃРµСЂРІРµСЂС– ${host}:${port} СЏРє ${username}...`).catch(() => {});
     }
 
-    console.log(`[Minecraft] Підключення до ${host}:${port} (${username})...`);
+    console.log(`[Minecraft] РџС–РґРєР»СЋС‡РµРЅРЅСЏ РґРѕ ${host}:${port} (${username})...`);
 
     minecraftBot = mineflayer.createBot({
         host: host,
         port: parseInt(port),
         username: username,
-        version: false // Автовизначення версії Minecraft
+        version: false // РђРІС‚РѕРІРёР·РЅР°С‡РµРЅРЅСЏ РІРµСЂСЃС–С— Minecraft
     });
 
-    // Успішний запуск
+    // РЈСЃРїС–С€РЅРёР№ Р·Р°РїСѓСЃРє
     minecraftBot.on('spawn', () => {
-        console.log(`[Minecraft] Бот ${username} успішно зайшов на сервер!`);
+        console.log(`[Minecraft] Р‘РѕС‚ ${username} СѓСЃРїС–С€РЅРѕ Р·Р°Р№С€РѕРІ РЅР° СЃРµСЂРІРµСЂ!`);
         if (ctx) {
-            ctx.reply(`? Бот успішно зайшов на сервер і тримає AFK!`).catch(() => {});
+            ctx.reply(`вњ… Р‘РѕС‚ СѓСЃРїС–С€РЅРѕ Р·Р°Р№С€РѕРІ РЅР° СЃРµСЂРІРµСЂ С– С‚СЂРёРјР°С” AFK!`).catch(() => {});
         }
 
-        // Цикл для запобігання кіку за AFK (стрибок кожну хвилину)
+        // Р¦РёРєР» РґР»СЏ Р·Р°РїРѕР±С–РіР°РЅРЅСЏ РєС–РєСѓ Р·Р° AFK (СЃС‚СЂРёР±РѕРє РєРѕР¶РЅСѓ С…РІРёР»РёРЅСѓ)
         if (minecraftBot._afkInterval) clearInterval(minecraftBot._afkInterval);
         minecraftBot._afkInterval = setInterval(() => {
             if (minecraftBot && minecraftBot.entity) {
@@ -55,19 +55,19 @@ function createMinecraftBot(host, port, username, ctx = null) {
         }, 60000);
     });
 
-    // Обробка помилок і вильотів
+    // РћР±СЂРѕР±РєР° РїРѕРјРёР»РѕРє С– РІРёР»СЊРѕС‚С–РІ
     minecraftBot.on('end', (reason) => {
-        console.log(`? AFK-бот зупинено. Причина: ${reason}`);
+        console.log(`в›” AFK-Р±РѕС‚ Р·СѓРїРёРЅРµРЅРѕ. РџСЂРёС‡РёРЅР°: ${reason}`);
         
         if (minecraftBot && minecraftBot._afkInterval) {
             clearInterval(minecraftBot._afkInterval);
         }
 
-        // Якщо користувач сам не зупиняв бота командою /stop_afk — пробуємо перезайди
+        // РЇРєС‰Рѕ РєРѕСЂРёСЃС‚СѓРІР°С‡ СЃР°Рј РЅРµ Р·СѓРїРёРЅСЏРІ Р±РѕС‚Р° РєРѕРјР°РЅРґРѕСЋ /stop_afk вЂ” РїСЂРѕР±СѓС”РјРѕ РїРµСЂРµР·Р°Р№РґРё
         if (!isIntentionallyStopped && currentServerConfig) {
-            console.log('?? Сервер вигнав або розірвав з'єднання. Перезаходжу через 10 секунд...');
+            console.log('рџ”„ РЎРµСЂРІРµСЂ РІРёРіРЅР°РІ Р°Р±Рѕ СЂРѕР·С–СЂРІР°РІ Р·'С”РґРЅР°РЅРЅСЏ. РџРµСЂРµР·Р°С…РѕРґР¶Сѓ С‡РµСЂРµР· 10 СЃРµРєСѓРЅРґ...');
             if (ctx) {
-                ctx.reply(`?? Бот відключився (причина: ${reason}). Пробую перезайті за 10 секунд...`).catch(() => {});
+                ctx.reply(`вљ пёЏ Р‘РѕС‚ РІС–РґРєР»СЋС‡РёРІСЃСЏ (РїСЂРёС‡РёРЅР°: ${reason}). РџСЂРѕР±СѓСЋ РїРµСЂРµР·Р°Р№С‚С– Р·Р° 10 СЃРµРєСѓРЅРґ...`).catch(() => {});
             }
 
             if (reconnectTimeout) clearTimeout(reconnectTimeout);
@@ -79,47 +79,47 @@ function createMinecraftBot(host, port, username, ctx = null) {
                         currentServerConfig.username
                     );
                 }
-            }, 10000); // 10 секунд затримки перед реконектом
+            }, 10000); // 10 СЃРµРєСѓРЅРґ Р·Р°С‚СЂРёРјРєРё РїРµСЂРµРґ СЂРµРєРѕРЅРµРєС‚РѕРј
         }
     });
 
     minecraftBot.on('error', (err) => {
-        console.log(`? Помилка Minecraft бота:`, err);
+        console.log(`вќЊ РџРѕРјРёР»РєР° Minecraft Р±РѕС‚Р°:`, err);
     });
 }
 
-// Команда /start
+// РљРѕРјР°РЅРґР° /start
 bot.start((ctx) => {
     ctx.reply(
-        'Привіт! Я бот для утримання Aternos-сервера 24/7.\n\n' +
-        'Використовуй команду у форматі:\n' +
-        '`/start_afk [IP] [ПОРТ] [НІКНЕЙМ]`\n\n' +
-        'Приклад:\n' +
+        'РџСЂРёРІС–С‚! РЇ Р±РѕС‚ РґР»СЏ СѓС‚СЂРёРјР°РЅРЅСЏ Aternos-СЃРµСЂРІРµСЂР° 24/7.\n\n' +
+        'Р’РёРєРѕСЂРёСЃС‚РѕРІСѓР№ РєРѕРјР°РЅРґСѓ Сѓ С„РѕСЂРјР°С‚С–:\n' +
+        '`/start_afk [IP] [РџРћР Рў] [РќР†РљРќР•Р™Рњ]`\n\n' +
+        'РџСЂРёРєР»Р°Рґ:\n' +
         '`/start_afk myServer.aternos.me 12345 AfkBot`\n\n' +
-        'Щоб зупинити бота, напиши: `/stop_afk`',
+        'Р©РѕР± Р·СѓРїРёРЅРёС‚Рё Р±РѕС‚Р°, РЅР°РїРёС€Рё: `/stop_afk`',
         { parse_mode: 'Markdown' }
     );
 });
 
-// Команда /start_afk IP ПОРТ НІКНЕЙМ
+// РљРѕРјР°РЅРґР° /start_afk IP РџРћР Рў РќР†РљРќР•Р™Рњ
 bot.command('start_afk', (ctx) => {
     const text = ctx.message.text;
-    const args = text.split(' ').slice(1); // Витягуємо аргументи після команди
+    const args = text.split(' ').slice(1); // Р’РёС‚СЏРіСѓС”РјРѕ Р°СЂРіСѓРјРµРЅС‚Рё РїС–СЃР»СЏ РєРѕРјР°РЅРґРё
 
     if (args.length < 3) {
-        return ctx.reply('? Неправильний формат! Використовуй:\n`/start_afk [IP] [ПОРТ] [НІКНЕЙМ]`', { parse_mode: 'Markdown' });
+        return ctx.reply('вќЊ РќРµРїСЂР°РІРёР»СЊРЅРёР№ С„РѕСЂРјР°С‚! Р’РёРєРѕСЂРёСЃС‚РѕРІСѓР№:\n`/start_afk [IP] [РџРћР Рў] [РќР†РљРќР•Р™Рњ]`', { parse_mode: 'Markdown' });
     }
 
     const [host, port, username] = args;
 
-    // Зупиняємо попереднього бота, якщо він був
+    // Р—СѓРїРёРЅСЏС”РјРѕ РїРѕРїРµСЂРµРґРЅСЊРѕРіРѕ Р±РѕС‚Р°, СЏРєС‰Рѕ РІС–РЅ Р±СѓРІ
     isIntentionallyStopped = true;
     if (reconnectTimeout) clearTimeout(reconnectTimeout);
 
     createMinecraftBot(host, port, username, ctx);
 });
 
-// Команда /stop_afk
+// РљРѕРјР°РЅРґР° /stop_afk
 bot.command('stop_afk', (ctx) => {
     isIntentionallyStopped = true;
     if (reconnectTimeout) clearTimeout(reconnectTimeout);
@@ -131,20 +131,20 @@ bot.command('stop_afk', (ctx) => {
         } catch (e) {}
         minecraftBot = null;
         currentServerConfig = null;
-        ctx.reply('?? AFK-бот повністю зупинено.');
+        ctx.reply('рџ›‘ AFK-Р±РѕС‚ РїРѕРІРЅС–СЃС‚СЋ Р·СѓРїРёРЅРµРЅРѕ.');
     } else {
-        ctx.reply('?? Зараз немає активних ботів.');
+        ctx.reply('вљ пёЏ Р—Р°СЂР°Р· РЅРµРјР°С” Р°РєС‚РёРІРЅРёС… Р±РѕС‚С–РІ.');
     }
 });
 
-// Запуск Telegram-бота
+// Р—Р°РїСѓСЃРє Telegram-Р±РѕС‚Р°
 bot.launch().then(() => {
-    console.log('?? Telegram-бот успішно запущений!');
+    console.log('рџ¤– Telegram-Р±РѕС‚ СѓСЃРїС–С€РЅРѕ Р·Р°РїСѓС‰РµРЅРёР№!');
 }).catch((err) => {
-    console.error('? Помилка запуску Telegram-бота:', err);
+    console.error('вќЊ РџРѕРјРёР»РєР° Р·Р°РїСѓСЃРєСѓ Telegram-Р±РѕС‚Р°:', err);
 });
 
-// Коректне завершення роботи
+// РљРѕСЂРµРєС‚РЅРµ Р·Р°РІРµСЂС€РµРЅРЅСЏ СЂРѕР±РѕС‚Рё
 process.once('SIGINT', () => {
     if (minecraftBot) minecraftBot.quit();
     bot.stop('SIGINT');

@@ -64,7 +64,7 @@ function createMinecraftBot(host, port, username, ctx = null) {
         }
 
         if (!isIntentionallyStopped && currentServerConfig) {
-            console.log("🔄 Сервер вигнав або розірвав з'єднання. Перезаходжу через 10 секунд...");
+            console.log("🔄 Сервер вигнав або розірвав зв'язок. Перезаходжу через 10 секунд...");
             if (ctx) {
                 ctx.reply(`⚠️ Бот відключився (причина: ${reason}). Пробую перезайти за 10 секунд...`).catch(() => {});
             }

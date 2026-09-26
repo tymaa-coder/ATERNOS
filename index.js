@@ -1,286 +1,148 @@
-// index.js
-// Telegram-бот, який керує mineflayer-ботом для утримання Aternos-сервера онлайн.
-//
-// Змінні середовища:
-//   BOT_TOKEN - токен Telegram-бота (обов'язково)
-//   PORT      - порт для HTTP-заглушки (Railway підставляє автоматично)
-
-const http = require('http');
 const { Telegraf } = require('telegraf');
 const mineflayer = require('mineflayer');
 
-// ---------- Перевірка обов'язкових змінних середовища ----------
 const BOT_TOKEN = process.env.BOT_TOKEN;
+
 if (!BOT_TOKEN) {
-  console.error('[FATAL] Не задано BOT_TOKEN у змінних середовища. Бот не може запуститись.');
-  process.exit(1);
+    console.error('❌ Помилка: Не задано BOT_TOKEN у змінних середовища!');
+    process.exit(1);
 }
 
-// ---------- Міні HTTP-сервер (потрібен для Railway health-check) ----------
-// Без відкритого порту деякі типи сервісів на Railway вважають деплой "unhealthy"
-// і перезапускають контейнер у циклі — саме через це бот часто "не відповідає".
-const PORT = process.env.PORT || 3000;
-http
-  .createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Aternos AFK bot is running.\n');
-  })
-  .listen(PORT, () => console.log(`[HTTP] Заглушка слухає порт ${PORT}`));
-
-// ---------- Telegram bot ----------
 const bot = new Telegraf(BOT_TOKEN);
 
-// Мапа активних сесій mineflayer, ключ - chatId
-// session = { mcBot, jumpTimer, reconnectTimer, host, port, username, chatId }
-const sessions = new Map();
+let minecraftBot = null;
+let currentServerConfig = null; 
+let reconnectTimeout = null;
+let isIntentionallyStopped = false; 
 
-const JUMP_INTERVAL_MS = 30_000; // раз на 30 секунд
-const JUMP_HOLD_MS = 400; // тримати "jump" 400мс
-
-function safeSend(chatId, text) {
-  bot.telegram.sendMessage(chatId, text).catch((err) => {
-    console.error('[TG] Не вдалося надіслати повідомлення:', err.message);
-  });
-}
-
-function stopSession(chatId, reason) {
-  const session = sessions.get(chatId);
-  if (!session) return;
-
-  if (session.jumpTimer) clearInterval(session.jumpTimer);
-
-  try {
-    if (session.mcBot) {
-      session.mcBot.removeAllListeners();
-      session.mcBot.quit();
+function createMinecraftBot(host, port, username, ctx = null) {
+    if (minecraftBot) {
+        try {
+            minecraftBot.quit();
+        } catch (e) {}
+        minecraftBot = null;
     }
-  } catch (err) {
-    console.error('[MC] Помилка під час зупинки бота:', err.message);
-  }
 
-  sessions.delete(chatId);
+    isIntentionallyStopped = false;
+    currentServerConfig = { host, port, username };
 
-  if (reason) {
-    safeSend(chatId, `⛔ AFK-бот зупинено. Причина: ${reason}`);
-  }
-}
+    if (ctx) {
+        ctx.reply(`🔄 Запускаю AFK-бота на сервері ${host}:${port} як ${username}...`).catch(() => {});
+    }
 
-function startAfkBot(chatId, host, port, username, version) {
-  if (sessions.has(chatId)) {
-    safeSend(chatId, '⚠️ У цьому чаті вже є активна AFK-сесія. Спочатку виконайте /stop_afk.');
-    return;
-  }
+    console.log(`[Minecraft] Підключення до ${host}:${port} (${username})...`);
 
-  safeSend(
-    chatId,
-    `🔄 Підключаюсь до ${host}:${port} як "${username}" (версія: ${version || 'авто'})...`
-  );
-
-  let mcBot;
-  try {
-    mcBot = mineflayer.createBot({
-      host,
-      port: Number(port),
-      username,
-      version: version || false, // якщо версію не вказали - авто-визначення
-      auth: 'offline', // Aternos зазвичай працює в offline/cracked режимі
+    minecraftBot = mineflayer.createBot({
+        host: host,
+        port: parseInt(port),
+        username: username,
+        version: false 
     });
-  } catch (err) {
-    console.error('[MC] Помилка створення бота:', err.message);
-    safeSend(chatId, `❌ Не вдалося створити бота: ${err.message}`);
-    return;
-  }
 
-  const session = {
-    mcBot,
-    jumpTimer: null,
-    host,
-    port,
-    username,
-    chatId,
-  };
-  sessions.set(chatId, session);
+    minecraftBot.on('spawn', () => {
+        console.log(`[Minecraft] Бот ${username} успішно зайшов на сервер!`);
+        if (ctx) {
+            ctx.reply(`✅ Бот успішно зайшов на сервер і тримає AFK!`).catch(() => {});
+        }
 
-  mcBot.once('spawn', () => {
-    safeSend(chatId, `✅ Бот "${username}" успішно зайшов на сервер ${host}:${port}.`);
+        if (minecraftBot._afkInterval) clearInterval(minecraftBot._afkInterval);
+        minecraftBot._afkInterval = setInterval(() => {
+            if (minecraftBot && minecraftBot.entity) {
+                minecraftBot.setControlState('jump', true);
+                setTimeout(() => {
+                    if (minecraftBot) minecraftBot.setControlState('jump', false);
+                }, 500);
+            }
+        }, 60000);
+    });
 
-    // Анти-АФК цикл: стрибки з інтервалом
-    session.jumpTimer = setInterval(() => {
-      try {
-        mcBot.setControlState('jump', true);
-        setTimeout(() => {
-          try {
-            mcBot.setControlState('jump', false);
-          } catch (e) {
-            // бот міг вже відключитись між стрибком і відпусканням - ігноруємо
-          }
-        }, JUMP_HOLD_MS);
-      } catch (err) {
-        console.error('[MC] Помилка анти-АФК циклу:', err.message);
-      }
-    }, JUMP_INTERVAL_MS);
-  });
+    minecraftBot.on('end', (reason) => {
+        console.log(`⛔ AFK-бот зупинено. Причина: ${reason}`);
+        
+        if (minecraftBot && minecraftBot._afkInterval) {
+            clearInterval(minecraftBot._afkInterval);
+        }
 
-  mcBot.on('kicked', (reason) => {
-    console.warn('[MC] Kicked:', reason);
-    stopSession(chatId, `сервер вигнав бота (${String(reason).slice(0, 200)})`);
-  });
+        if (!isIntentionallyStopped && currentServerConfig) {
+            console.log("🔄 Сервер вигнав або розірвав зв'язок. Перезаходжу через 10 секунд...");
+            if (ctx) {
+                ctx.reply(`⚠️ Бот відключився (причина: ${reason}). Пробую перезайти за 10 секунд...`).catch(() => {});
+            }
 
-  mcBot.on('end', (reason) => {
-    console.warn('[MC] Connection ended:', reason);
-    // stopSession безпечний до повторного виклику - якщо сесію вже видалено, нічого не станеться
-    if (sessions.has(chatId)) {
-      stopSession(chatId, `з'єднання розірвано (${reason || 'невідома причина'})`);
-    }
-  });
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            reconnectTimeout = setTimeout(() => {
+                if (!isIntentionallyStopped && currentServerConfig) {
+                    createMinecraftBot(
+                        currentServerConfig.host, 
+                        currentServerConfig.port, 
+                        currentServerConfig.username
+                    );
+                }
+            }, 10000); 
+        }
+    });
 
-  mcBot.on('error', (err) => {
-    console.error('[MC] Bot error:', err.message);
-    safeSend(chatId, `⚠️ Помилка Minecraft-бота: ${err.message}`);
-    // Помилки на кшталт ECONNREFUSED / ENOTFOUND зазвичай супроводжуються 'end' - додатково не зупиняємо тут,
-    // щоб уникнути подвійного виклику stopSession.
-  });
-
-  mcBot.on('death', () => {
-    try {
-      mcBot.respawn();
-    } catch (err) {
-      console.error('[MC] Помилка respawn:', err.message);
-    }
-  });
+    minecraftBot.on('error', (err) => {
+        console.log(`❌ Помилка Minecraft бота:`, err);
+    });
 }
-
-// ---------- Команди Telegram ----------
 
 bot.start((ctx) => {
-  ctx.reply(
-    [
-      '👋 Привіт! Я тримаю твій Aternos-сервер онлайн.',
-      '',
-      'Команди:',
-      '/start_afk <IP> <ПОРТ> <НІКНЕЙМ> [ВЕРСІЯ] - підключити бота до сервера',
-      '/stop_afk - відключити бота',
-      '/status - перевірити стан',
-      '',
-      'Версію вказувати не обов\'язково (тоді визначиться автоматично),',
-      'але якщо є помилка на кшталт "array size is abnormally large" -',
-      'вкажи версію явно, як у другому прикладі.',
-      '',
-      'Приклади:',
-      '/start_afk myserver.aternos.me 25565 AfkBot',
-      '/start_afk myserver.aternos.me 25565 AfkBot 1.20.1',
-    ].join('\n')
-  );
+    ctx.reply(
+        'Привіт! Я бот для утримання Aternos-сервера 24/7.\n\n' +
+        'Використовуй команду у форматі:\n' +
+        '`/start_afk [IP] [ПОРТ] [НІКНЕЙМ]`\n\n' +
+        'Приклад:\n' +
+        '`/start_afk myServer.aternos.me 12345 AfkBot`\n\n' +
+        'Щоб зупинити бота, напиши: `/stop_afk`',
+        { parse_mode: 'Markdown' }
+    );
 });
 
-// Схема відомих версій Minecraft, щоб відрізнити "нік" від "версії" в аргументах.
-// Якщо останній аргумент виглядає як версія (наприклад 1.20.1), не додаємо його до ніку.
-const VERSION_REGEX = /^\d+\.\d+(\.\d+)?$/;
-
 bot.command('start_afk', (ctx) => {
-  const chatId = ctx.chat.id;
-  const parts = ctx.message.text.trim().split(/\s+/).slice(1); // прибираємо саму команду
+    const text = ctx.message.text;
+    const args = text.split(' ').slice(1); 
 
-  if (parts.length < 3) {
-    ctx.reply(
-      [
-        '❗ Невірний формат.',
-        'Використання:',
-        '/start_afk <IP> <ПОРТ> <НІКНЕЙМ> [ВЕРСІЯ]',
-        '',
-        'Приклади:',
-        '/start_afk myserver.aternos.me 25565 AfkBot',
-        '/start_afk myserver.aternos.me 25565 AfkBot 1.20.1',
-      ].join('\n')
-    );
-    return;
-  }
+    if (args.length < 3) {
+        return ctx.reply('❌ Неправильний формат! Використовуй:\n`/start_afk [IP] [ПОРТ] [НІКНЕЙМ]`', { parse_mode: 'Markdown' });
+    }
 
-  let version = null;
-  if (parts.length >= 4 && VERSION_REGEX.test(parts[parts.length - 1])) {
-    version = parts.pop();
-  }
+    const [host, port, username] = args;
 
-  const [host, portStr, ...nickParts] = parts;
-  const username = nickParts.join('_'); // якщо в ніку були пробіли
-  const port = parseInt(portStr, 10);
+    isIntentionallyStopped = true;
+    if (reconnectTimeout) clearTimeout(reconnectTimeout);
 
-  if (!host || Number.isNaN(port) || port <= 0 || port > 65535) {
-    ctx.reply('❗ IP або порт вказано невірно. Порт має бути числом від 1 до 65535.');
-    return;
-  }
-
-  if (!username) {
-    ctx.reply('❗ Не вказано нікнейм.');
-    return;
-  }
-
-  try {
-    startAfkBot(chatId, host, port, username, version);
-  } catch (err) {
-    console.error('[TG] Неочікувана помилка start_afk:', err);
-    ctx.reply(`❌ Сталася непередбачена помилка: ${err.message}`);
-  }
+    createMinecraftBot(host, port, username, ctx);
 });
 
 bot.command('stop_afk', (ctx) => {
-  const chatId = ctx.chat.id;
-  if (!sessions.has(chatId)) {
-    ctx.reply('ℹ️ Немає активної AFK-сесії в цьому чаті.');
-    return;
-  }
-  stopSession(chatId, 'зупинено користувачем');
+    isIntentionallyStopped = true;
+    if (reconnectTimeout) clearTimeout(reconnectTimeout);
+
+    if (minecraftBot) {
+        if (minecraftBot._afkInterval) clearInterval(minecraftBot._afkInterval);
+        try {
+            minecraftBot.quit();
+        } catch (e) {}
+        minecraftBot = null;
+        currentServerConfig = null;
+        ctx.reply('🛑 AFK-бот повністю зупинено.');
+    } else {
+        ctx.reply('⚠️ Зараз немає активних ботів.');
+    }
 });
 
-bot.command('status', (ctx) => {
-  const chatId = ctx.chat.id;
-  const session = sessions.get(chatId);
-  if (!session) {
-    ctx.reply('ℹ️ AFK-бот наразі неактивний.');
-    return;
-  }
-  ctx.reply(
-    `✅ Активна сесія:\nСервер: ${session.host}:${session.port}\nНік: ${session.username}`
-  );
+bot.launch().then(() => {
+    console.log('🤖 Telegram-бот успішно запущений!');
+}).catch((err) => {
+    console.error('❌ Помилка запуску Telegram-бота:', err);
 });
 
-// ---------- Глобальна обробка помилок Telegraf ----------
-// Дуже важливо: без цього одна необроблена помилка в будь-якому обробнику
-// може "покласти" весь процес і бот перестане відповідати на всі команди.
-bot.catch((err, ctx) => {
-  console.error(`[Telegraf] Помилка для оновлення ${ctx.updateType}:`, err);
-  try {
-    ctx.reply('⚠️ Сталася внутрішня помилка. Спробуйте ще раз.');
-  } catch (_) {
-    // ігноруємо, якщо навіть відповісти не вдалося
-  }
-});
-
-// ---------- Запуск бота ----------
-bot
-  .launch()
-  .then(() => console.log('[TG] Telegram-бот запущено (long polling).'))
-  .catch((err) => {
-    console.error('[FATAL] Не вдалося запустити Telegram-бота:', err);
-    process.exit(1);
-  });
-
-// ---------- Глобальні захисні обробники, щоб процес не падав ----------
-process.on('unhandledRejection', (reason) => {
-  console.error('[unhandledRejection]', reason);
-});
-process.on('uncaughtException', (err) => {
-  console.error('[uncaughtException]', err);
-});
-
-// ---------- Коректне завершення роботи ----------
 process.once('SIGINT', () => {
-  bot.stop('SIGINT');
-  sessions.forEach((_, chatId) => stopSession(chatId));
-  process.exit(0);
+    if (minecraftBot) minecraftBot.quit();
+    bot.stop('SIGINT');
 });
 process.once('SIGTERM', () => {
-  bot.stop('SIGTERM');
-  sessions.forEach((_, chatId) => stopSession(chatId));
-  process.exit(0);
+    if (minecraftBot) minecraftBot.quit();
+    bot.stop('SIGTERM');
 });
